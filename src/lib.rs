@@ -50,7 +50,8 @@ pub use rustls;
 
 use rustls::pki_types::ServerName;
 use rustls::server::AcceptedAlert;
-use rustls::{ClientConfig, ClientConnection, CommonState, ServerConfig, ServerConnection};
+use rustls::{ClientConfig, ClientConnection, CommonState, ServerConfig, ServerConnection, AttestationMode};
+
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, ReadBuf};
 
 macro_rules! ready {
@@ -109,19 +110,19 @@ impl TlsConnector {
     }
 
     #[inline]
-    pub fn connect<IO>(&self, domain: ServerName<'static>, stream: IO) -> Connect<IO>
+    pub fn connect<IO>(&self, domain: ServerName<'static>,  attested: AttestationMode, stream: IO) -> Connect<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
-        self.connect_with(domain, stream, |_| ())
+        self.connect_with(domain, attested, stream, |_| ())
     }
 
-    pub fn connect_with<IO, F>(&self, domain: ServerName<'static>, stream: IO, f: F) -> Connect<IO>
+    pub fn connect_with<IO, F>(&self, domain: ServerName<'static>, attested: AttestationMode, stream: IO, f: F) -> Connect<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
         F: FnOnce(&mut ClientConnection),
     {
-        let mut session = match ClientConnection::new(self.inner.clone(), domain) {
+        let mut session = match ClientConnection::new(self.inner.clone(), domain, attested) {
             Ok(session) => session,
             Err(error) => {
                 return Connect(MidHandshake::Error {
@@ -162,19 +163,19 @@ impl TlsConnector {
 
 impl TlsAcceptor {
     #[inline]
-    pub fn accept<IO>(&self, stream: IO) -> Accept<IO>
+    pub fn accept<IO>(&self, stream: IO, attested: AttestationMode) -> Accept<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
-        self.accept_with(stream, |_| ())
+        self.accept_with(stream, attested, |_| ())
     }
 
-    pub fn accept_with<IO, F>(&self, stream: IO, f: F) -> Accept<IO>
+    pub fn accept_with<IO, F>(&self, stream: IO, attested: AttestationMode, f: F) -> Accept<IO>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
         F: FnOnce(&mut ServerConnection),
     {
-        let mut session = match ServerConnection::new(self.inner.clone()) {
+        let mut session = match ServerConnection::new(self.inner.clone(), attested) {
             Ok(session) => session,
             Err(error) => {
                 return Accept(MidHandshake::Error {
