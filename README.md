@@ -38,12 +38,21 @@ To run the server:
 cd tokio-rustls
 cargo run --example server localhost:8080 -c ../rustls-0-23-25/test-ca/ecdsa-p256/end.fullchain -k ../rustls-0-23-25/test-ca/ecdsa-p256/end.key --client-auth ../rustls-0-23-25/test-ca/ecdsa-p384/ca.cert -e -a mutual -v
 ```
+- client-auth: require client authentication, optional
+- client-revoke: pass in a crl to check client certification revocation and expiration, optional
+- attested: disabled or request or proposal or mutual
+- verbose: enable trace and debug
+
+
 To run the client:
 ```sh
 cargo run --example client localhost -p 8080 -c ../rustls-0-23-25/test-ca/ecdsa-p256/ca.cert --client-cert ../rustls-0-23-25/test-ca/ecdsa-p384/client.fullchain --client-key ../rustls-0-23-25/test-ca/ecdsa-p384/client.key  -a mutual -v
 ```
+- client-cert: ca for client certificate
+- client-key: private client identity key 
+- attested: disabled or request or proposal or mutual
+- verbose: enable trace and debug
 
-Modofication to rustls for attested TLS:
 
 
 
