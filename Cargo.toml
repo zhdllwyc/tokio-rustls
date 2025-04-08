@@ -13,7 +13,7 @@ rust-version = "1.71"
 exclude = ["/.github", "/examples", "/scripts"]
 
 [dependencies]
-rustls = { path = "../rustls-0-23-25/rustls", default-features = false, features = ["std"]  }
+rustls = { git = "ssh://git@github.com/zhdllwyc/attested-rustls.git", branch = "rustls-0-23-25"}
 tokio = "1.0"
 env_logger = "0.11"
 
