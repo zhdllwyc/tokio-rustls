@@ -86,6 +86,133 @@ fn load_crls(
 }
 
 
+
+
+// Core abstraction interface: The trait a user will implement to customize their own state machine
+// Connection state machine takes in an input, a party state, and the currerent FSM state, and perform transition, and produce output
+pub trait ConnectionStateMachine<S> {
+    /// Total number of offline states. Return 0 to skip offline stages.
+    fn offline_stage_count(&self) -> usize;
+
+    /// Total number of online states
+    fn online_stage_count(&self) -> usize;
+
+    /// Given the current FSM state, input, and party state, perform a transition
+    fn transition(&mut self, input: &str, state: &mut S, current_mode: ConnectionMode) -> ConnectionStatus;
+}
+
+
+// Enum representing whether we're in offline or online mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionMode {
+    Offline(usize), // Current offline stage
+    Online(usize),  // Current online stage
+}
+
+// Enum representing the result of a state transition
+#[derive(Debug, Clone)]
+pub enum ConnectionStatus {
+    TransitionTo(ConnectionMode),
+    Disconnect,
+}
+
+
+
+// A connection session that runs the state machine
+pub struct Connection<T: ConnectionStateMachine<S>, S> {
+    state_machine: T,
+    mode: ConnectionMode,
+    counter: usize,
+    pub user_state: S,
+}
+
+// Connection works with any types T and S: implementing methods for the Connection struct, which is generic over T (the FSM) and S (the party state).
+// T: ConnectionStateMachine is a trait bound: T must implement the ConnectionStateMachine trait for state type S
+impl<T: ConnectionStateMachine<S>, S> Connection<T, S> {
+    pub fn new(state_machine: T, user_state: S) -> Self {
+        let initial_mode = if state_machine.offline_stage_count() == 0 {
+            ConnectionMode::Online(0)
+        } else {
+            ConnectionMode::Offline(0)
+        };
+
+        Self {
+            state_machine,
+            mode: initial_mode,
+            counter: 0,
+            user_state,
+        }
+    }
+
+    pub fn handle_input(&mut self, input: &str) -> bool {
+        match self.state_machine.transition(input, &mut self.user_state) {
+            ConnectionStatus::TransitionTo(new_mode) => {
+                self.mode = new_mode;
+                true
+            }
+            ConnectionStatus::Stay => true,
+            ConnectionStatus::Disconnect => false,
+        }
+    }
+
+    pub fn get_mode(&self) -> ConnectionMode {
+        self.mode
+    }
+}
+
+
+// Example party state
+#[derive(Debug)]
+struct PartyState {
+    pub counter: usize,
+}
+
+// Example user implementation for testing
+struct ExampleFSM;
+
+impl ConnectionStateMachine<PartyState> for ExampleFSM {
+    fn offline_stage_count(&self) -> usize {
+        0 // No offline stage
+    }
+
+    fn online_stage_count(&self) -> usize {
+        6
+    }
+
+    fn transition(&mut self, input: &str, state: &mut PartyState, current_mode: ConnectionMode) -> ConnectionStatus {
+        match (input, current_mode) {
+            ("next", ConnectionMode::Online(stage)) if stage < 5 => {
+                state.counter += 1;
+                ConnectionStatus::TransitionTo(ConnectionMode::Online(stage + 1))
+            }
+            ("disconnect", _) => ConnectionStatus::Disconnect,
+            _ => ConnectionStatus::Disconnect,
+        }
+    }
+}
+
+
+async fn handle_client(stream: TcpStream) {
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut lines = reader.lines();
+
+    let user_state = PartyState { counter: 0 };
+    let mut conn = Connection::new(ExampleFSM, user_state);
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let keep_alive = conn.handle_input(&line);
+        let response = format!("Current mode: {:?}\nUser state: {:?}\n", conn.get_mode(), conn.user_state);
+        if writer.write_all(response.as_bytes()).await.is_err() {
+            break;
+        }
+        if !keep_alive {
+            break;
+        }
+    }
+}
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
     
@@ -175,12 +302,18 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync + 'static>> {
             Ok(()) as io::Result<()>
         };
 
+
+        // tokio::spawn schedules the task onto a worker thread pool managed by the Tokio runtime.
+        // It's like a super-efficient thread scheduler: tasks are small, cheap, and cooperative (they yield via .await).
         tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                eprintln!("{:?}", err);
-            }
+            // if let Err(err) = fut.await {
+            //     eprintln!("{:?}", err);
+            // }
+
+            handle_client(stream).await;
         });
     }
 }
+
 
 
